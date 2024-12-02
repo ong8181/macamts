@@ -1,0 +1,248 @@
+---
+title: "macam: A collection of miscellaneous functions for ecology in R"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{macam: A collection of miscellaneous functions for ecology in R}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Installation
+```{r, message=FALSE, eval=FALSE}
+#install.packages("remotes")
+#remotes::install_github("ong8181/macam")
+remotes::install_github("ong8181/macam", build_vignettes = TRUE, force = TRUE)
+```
+
+# Load library
+```{r, eval=FALSE}
+library(macam)
+packageVersion("macam")
+browseVignettes("macam")
+```
+
+# Quick tutrials
+## File/directory handling
+### `outdir_create()`
+```{r, eval=FALSE}
+# Create output directory and save the directory name
+output_dir <- outdir_create()
+# Change str_end if the file extension is not ".R"
+#output_dir <- outdir_create(str_end = 5)
+```
+
+### `save_workspace()`
+```{r, eval=FALSE}
+# Save workspace in the output directory
+save_workspace(output_dir)
+```
+
+### `save_session_info()`
+```{r, eval=FALSE}
+# Save session information in 00_SessionInfo directory
+save_session_info(create_session_info_dir = TRUE)
+```
+
+## Sequence analysis
+### `AllOrients()`
+```{r, eval=FALSE}
+AllOrients("ATGC")
+```
+
+### `PrimerHits()`
+see [DADA2 tutrial](https://benjjneb.github.io/dada2/ITS_workflow.html).
+
+### `rarefy_even_coverage()`, `plot_rarefy()`
+```{r, eval = FALSE}
+# Load library
+library(tidyverse)
+library(phyloseq)
+library(ShortRead)
+
+# Load demo data
+data(sample_sheet, asv_sheet, tax_sheet)
+# Check colnames and rownames
+dim(sample_sheet); dim(asv_sheet); dim(tax_sheet)
+all(rownames(asv_sheet) == rownames(sample_sheet))
+all(colnames(asv_sheet) == rownames(tax_sheet))
+
+# ----------------------------------------------- #
+# Import to phyloseq and data handling
+# ----------------------------------------------- #
+# Import to phyloseq
+ps_all <- phyloseq(otu_table(asv_sheet, taxa_are_rows = FALSE),
+                   sample_data(sample_sheet),
+                   tax_table(as.matrix(tax_sheet)))
+ps_sample <- ps_all %>%
+  subset_samples(sample_nc == "sample" & Site == "sea") %>%
+  prune_taxa(taxa_sums(.) > 0, .)
+sample_sums(ps_sample)
+
+# ----------------------------------------------- #
+# Perform coverage-based rarefaction
+# ----------------------------------------------- #
+set.seed(1234)
+ps_rare_raw <- rarefy_even_coverage(ps_sample,
+                                    coverage = 0.97,
+                                    knots = 100,
+                                    rarefy_average_method = "round", # Specify how iterated rarefaction results are averaged. You may change.
+                                    include_iNEXT_results = TRUE)
+ps_rare <- ps_rare_raw[[1]] # Extract phyloseq object
+sample_sums(ps_rare)
+sample_data(ps_rare)
+
+# ----------------------------------------------- #
+# Visualize rarefaction curve
+# ----------------------------------------------- #
+plot_rarefy(ps_rare_raw) +
+  coord_cartesian(xlim = c(0, 4000))
+```
+
+### `taxa_name_bundle()`
+```{r, eval = FALSE}
+# Check current family names
+tax_table(ps_rare)[,"family"]
+
+# Summarize taxa names and store them "rep_tax" column
+ps_tax_sum <- taxa_name_bundle(ps_rare, "family", top_taxa_n = 10)
+
+# Only 8 taxa names + "Undetermined" + "Others" are kept in the "rep_tax" column
+# Check current family names
+tax_table(ps_tax_sum)[,"bundled_tax"] %>%
+  as.data.frame %>% unlist %>% unique
+```
+
+## Time series analysis
+### `s_map_rgl()`
+```{r, eval = FALSE}
+# Load library
+library(rEDM)
+packageVersion("rEDM") # v0.7.5
+
+# Load data
+data(data_4sp)
+
+# Normalize and check model time series
+y1 <- as.numeric(scale(data_4sp[,1]))
+
+# Estimate optimal embeding dimension
+simp_res1 <- rEDM::simplex(y1, E = 1:20, silent = T)
+(Ey1 <- simp_res1[which.min(simp_res1$rmse), "E"])
+
+# Perform S-map
+## Normal S-map by rEDM
+y1_smap_rEDM <- s_map(y1, E = Ey1, theta = 0.1)
+## Normal S-map by macam
+y1_smap_macam <- s_map_rgl(y1, E = Ey1, theta = 0.1, regularized = F)
+## Regularized S-map (ridge)
+y1_ridge <- s_map_rgl(y1, E = Ey1, theta = 0.1, lambda = 0.1,
+                       regularized = T, alpha = 0, random_seed = 1234)
+## Regularized S-map (lasso)
+y1_lasso <- s_map_rgl(y1, E = Ey1, theta = 0.1, lambda = 0.1,
+                       regularized = T, alpha = 1, random_seed = 1234)
+
+# Check RMSE
+y1_smap_rEDM$rmse; y1_smap_macam$stats$rmse
+y1_ridge$stats$rmse; y1_lasso$stats$rmse
+
+# extended_lnlp() version
+#block_y1 <- rEDM::make_block(y1, max_lag = Ey1)[,2:(Ey1+1)]
+#y1_ridge <- extende_lnlp(block_y1, theta = 0.1, lambda = 0.1,
+#                       regularized = T, alpha = 0, random_seed = 1234)
+```
+
+### MDR S-map
+```{r, eval = FALSE}
+# Load library
+library(rEDM)
+packageVersion("rEDM") # v0.7.5
+library(rUIC)
+packageVersion("rUIC") # v0.9.0
+
+# Load data
+data(data_4sp)
+
+# Standardize data
+data_4sp_std <- as.data.frame(apply(data_4sp, 2, function(x) as.numeric(scale(x))))
+effect_var <- "Sebastes.inermis"
+
+# Step. 1: Estimate optimal embeding dimension
+simp_x <- rUIC::simplex(data_4sp_std, lib_var = effect_var, E = 0:10, tp = 1)
+(Ex <- simp_x[which.min(simp_x$rmse),"E"])
+
+# Step 2: Perform UIC to detect causality
+uic_res <- uic_across(data_4sp_std, effect_var, E_range = 0:10, tp_range = -12:0, silent = TRUE)
+
+# Step 3: Make block to calculate multiview distance
+block_mvd <- make_block_mvd(data_4sp_std, uic_res, effect_var, E_effect_var = Ex, include_var = "all_significant", p_threshold = 0.05)
+
+# Step. 4: Compute multiview distance
+multiview_dist <- compute_mvd(block_mvd, effect_var, E = Ex, tp = 1)
+
+# Step. 5: Do MDR S-map
+mdr_res <- s_map_mdr(block_mvd,
+                     dist_w = multiview_dist,
+                     theta = 1,
+                     tp = 1,
+                     regularized = FALSE,
+                     save_smap_coefficients = TRUE)
+mdr_res$stats # rho = 0.498; rmse = 0.760
+
+# Compare with the normal S-map
+smap_res <- rEDM::block_lnlp(data_4sp_std, target_column = effect_var,
+                 method = "s-map", theta = 1, tp = 1, stats_only = F)
+smap_res$rho # rho = 0.434
+smap_res$rmse # rmse = 0.780
+
+# An all-in-one wrapper function
+all_res <- s_map_mdr_all(data_4sp_std, effect_var, theta = 1, tp = 1)
+## Note that include_var = "tp0_only" is used in s_map_mdr_all()
+## Thus, the result is different from the example using step-by-step functions
+## n_ssr = 100 and k = 10 to speed up the computation
+```
+
+### `twin_surrogate_cpp()`
+```{r, eval = FALSE}
+# Load library
+library(tidyverse)
+
+# Generate twin surrogates
+y1_twin <- twin_surrogate_cpp(y1, dim = Ey1, num.iter = 100,
+                              surrogate.option = "phase_lock",
+                              initial.point = "same_season",
+                              point.per.year = 24)
+
+# Visualize twin surrogate
+y1_twin_df <- data.frame(time = 1:length(y1),
+                         y1 = y1,
+                         y1_twin1 = y1_twin$V1,
+                         y1_twin2 = y1_twin$V2) %>% 
+  pivot_longer(cols = -time, names_to = "time_series")
+
+ggplot(y1_twin_df, aes(x = time, y = value, color = time_series)) +
+  geom_line()
+```
+
+## ggplot2 functions
+#### `label_10_to_power()`
+```{r, eval = FALSE}
+# Load library
+library(ggplot2)
+
+# Prepare data
+data(data_4sp)
+data_4sp$time <- 1:nrow(data_4sp)
+
+# Generate ggplot figure
+g1 <- ggplot(data_4sp, aes(x = time, y = Trachurus.japonicus)) + geom_line()
+
+# Convert y-axis label to a scientific notation
+g1 + scale_y_continuous(breaks = seq(0, 1500, 200), label= label_10_to_power)
+```
