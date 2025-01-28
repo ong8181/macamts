@@ -1,7 +1,7 @@
 Package: macamts
 Type: Package
 Title: A subset of the R package macam for time series analysis
-Version: 0.1.7
+Version: 0.1.9
 Author: Masayuki Ushio
 Maintainer: Masayuki Ushio <ong8181@gmail.com>
 Description: macamts contains a subset of the R functions implemented in macam.
