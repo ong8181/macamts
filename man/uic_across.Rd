@@ -33,7 +33,7 @@ uic_across(
 
 \item{fdr}{Logical. If \code{TRUE}, calculate False Discovery Rate using \code{stats::p.adjust()} and BH method.}
 
-\item{silent}{Logical. If \code{TRUE}, progress message will not be shown.}
+\item{silent}{Logical. if \code{TRUE}, progress message will not be shown.}
 }
 \value{
 A data.frame that contains UIC results

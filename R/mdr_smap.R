@@ -8,7 +8,7 @@
 #' @param num_surr Numeric. The number of surrogate data generated to compute p-value.
 #' @param alpha Numeric. the significant level to determine the embedding dimension of reference model (i.e., `E0`). If `alpha = NULL`, `E0` is set to `E - 1`. If `0 < alpha < 1` `E0` depends on the model results with lower embedding dimensions. Default is 0.05.
 #' @param fdr Logical. If `TRUE`, calculate False Discovery Rate using `stats::p.adjust()` and BH method.
-#' @param silent Logical. If `TRUE`, progress message will not be shown.
+#' @param silent Logical. if `TRUE`, progress message will not be shown.
 #' @return A data.frame that contains UIC results
 #' @details
 #' \itemize{
@@ -47,9 +47,9 @@ uic_across <- function(block,
   # Identify causal relationship using rUIC
   # ---------------------------------------------------- #
   ## Perform UIC for all pairs
-  # ---------------------------------------------------- #
-  # uic.optimal()
-  # ---------------------------------------------------- #
+    # ---------------------------------------------------- #
+    # uic.optimal()
+    # ---------------------------------------------------- #
   for (y_i in x_names[x_names != effect_var]) {
     time_start <- proc.time()
     # Testing the effect of "y_i" on "effect_var" using uic.optimal()
@@ -219,6 +219,7 @@ make_block_mvd <- function (block,
 #' @param make_block_max_lag Numeric. `max_lag` in `rEDM::make_block()`. This argument will be used only if `make_block_method = "rEDM"`.
 #' @param n_ssr Numeric. The total number of embeddings examined.
 #' @param k Numeric. The number of embeddings used to calculate ensemble distance.
+#' @param simplex_func Character. If `rEDM_v0.7.5` (default), `rEDM::block_lnlp()` is used to calculate the forecasting skill to rank embeddings. If `custom`, `extended_lnlp()` is used. Installation of `rEDM` package is not necessary if `extended_lnlp()` is used, but the computation speed may be slower.
 #' @param random_seed Numeric. Random seed.
 #' @param distance_only Logical. if `TRUE`, only distance matrix is returned.
 #' @param silent Logical. if `TRUE`, progress message will not be shown.
@@ -234,7 +235,9 @@ compute_mvd <- function (block_mvd, effect_var, E,
                          pred = lib,
                          make_block_method = "naive", # "rEDM"
                          make_block_max_lag = E,
-                         n_ssr = 10000, k = floor(sqrt(n_ssr)),
+                         n_ssr = 10000,
+                         k = floor(sqrt(n_ssr)),
+                         simplex_func = "rEDM_v0.7.5", # Or "custom"
                          random_seed = 1234,
                          distance_only = TRUE,
                          silent = FALSE) {
@@ -248,7 +251,6 @@ compute_mvd <- function (block_mvd, effect_var, E,
   if (is.numeric(effect_var)) effect_var <- x_names[effect_var]
   if (colnames(block_mvd)[1] != sprintf("%s_tp0", effect_var)) stop("The first column should be the target variable with tp = 0!")
   if (!(make_block_method %in% c("naive", "rEDM"))) stop("\"make_block_method\" should be \"naive\" or \"rEDM\".")
-
 
   # ---------------------------------------------------- #
   # Generate an embedding list
@@ -302,14 +304,33 @@ compute_mvd <- function (block_mvd, effect_var, E,
   for (i in 1:nrow_res) {
     ## Choose embedding ids (id = 1 is always a target column)
     embedding_idx_i <- embedding_list[i,]
-    ## Perform simplex projection
-    rand_embed_res_i <- rEDM::block_lnlp(block_mvd[,embedding_idx_i],
-                                         lib = lib,
-                                         pred = pred,
-                                         method = "simplex",
-                                         silent = TRUE,
-                                         tp = tp,
-                                         target_column = 1)
+
+    if(simplex_func == "rEDM_v0.7.5") {
+      ## Perform simplex projection using rEDM::block_lnlp()
+      rand_embed_res_i <- rEDM::block_lnlp(block_mvd[,embedding_idx_i],
+                                           lib = lib,
+                                           pred = pred,
+                                           tp = tp,
+                                           method = "simplex",
+                                           silent = TRUE,
+                                           target_column = 1)
+    } else if (simplex_func == "custom") {
+      ## Perform simplex projection using rEDM::block_lnlp()
+      rand_embed_res_i_tmp <- macamts::extended_lnlp(block_mvd[,embedding_idx_i],
+                                                     lib = lib,
+                                                     pred = pred,
+                                                     tp = tp,
+                                                     method = "simplex",
+                                                     target_column = 1)
+      rand_embed_res_i <- data.frame(embedding = NA,
+                                     tp = tp,
+                                     nn = length(embedding_idx_i) + 1,
+                                     num_pred = rand_embed_res_i_tmp$stats$N,
+                                     rho = rand_embed_res_i_tmp$stats$rho,
+                                     mae = rand_embed_res_i_tmp$stats$mae,
+                                     rmse = rand_embed_res_i_tmp$stats$rmse)
+    }
+
     # Add information
     rand_embed_res_i$embedding <- stringr::str_sub(stringr::str_c(embedding_idx_i, ",", collapse = " "), end = -2)
     # Merge results
@@ -471,18 +492,18 @@ s_map_mdr_all <- function (block,
   # Step 3: Make block to calculate multiview distance
   block_mvd <- make_block_mvd(block, uic_res, effect_var, E_effect_var = Ex, include_var = "tp0_only")
 
-  # Use "c(1, nrow(block_mvd))" as "lib" if "lib" is not specified
-  if (is.null(lib)) {
-    lib <- c(1, nrow(block_mvd))
-    pred <- lib
-  }
-
   # Step. 4: Compute multiview distance
   multiview_dist <- compute_mvd(block_mvd, effect_var, E = Ex,
                                 make_block_method = "rEDM",
                                 make_block_max_lag = Ex,
                                 n_ssr = n_ssr, k = k,
                                 tp = tp, random_seed = random_seed)
+
+  # Use "c(1, nrow(block_mvd))" as "lib" if "lib" is not specified
+  if (is.null(lib)) {
+    lib <- c(1, nrow(block_mvd))
+    pred <- lib
+  }
 
   # Step. 5: Do MDR S-map
   mdr_res <- s_map_mdr(block_mvd,
@@ -502,64 +523,3 @@ s_map_mdr_all <- function (block,
 }
 
 
-
-# #' @title `make_block` function from rEDM v0.7.5
-# #' @description \code{make_block} generates a lagged block with the appropriate max_lag and tau, while respecting lib (by inserting NANs, when trying to lag past lib regions)
-# #' @param block a data.frame or matrix where each column is a time series
-# #' @param t Numeric. The time index for the block.
-# #' @param max_lag The total number of lags to include for each variable.
-# #' @param tau The lag to use for time delay embedding.
-# #' @param lib A 2-column matrix (or 2-element vector) where each row specifies the first and last *rows* of the time series to use for attractor reconstruction.
-# #' @param restrict_to_lib Whether to restrict the final lagged block to just the rows specified in lib (if lib exists).
-# #' @return A data.frame with the lagged columns and a time column. If the original block had columns X, Y, Z and max_lag = 3, then the returned data.frame will have columns TIME, X, X_1, X_2, Y, Y_1, Y_2, Z, Z_1, Z_2.
-# #' @details
-# #' \itemize{
-# #'  \item{Ye et al. (2018) Applications of Empirical Dynamic Modeling from Time Series. https://github.com/ha0ye/rEDM}
-# #' }
-# #' @export
-# make_block <- function (block, t = NULL, max_lag = 3, tau = 1, lib = NULL,
-#           restrict_to_lib = TRUE) {
-#   if (is.vector(block)) block <- matrix(block, ncol = 1)
-#   num_vars <- NCOL(block)
-#   num_rows <- NROW(block)
-#
-#   if (!is.null(lib)) {
-#     if (is.vector(lib)) lib <- matrix(lib, ncol = 2, byrow = TRUE)
-#   }
-#   output <- matrix(NA, nrow = num_rows, ncol = 1 + num_vars * max_lag)
-#   col_names <- character(1 + num_vars * max_lag)
-#   if (is.null(t)) output[, 1] <- 1:num_rows else output[, 1] <- t
-#   col_names[1] <- "time"
-#   col_index <- 2
-#   if (is.null(colnames(block))) colnames(block) <- paste0("col", seq_len(num_vars))
-#
-#   for (j in 1:num_vars) {
-#     ts <- block[, j]
-#     if (is.list(ts)) {
-#       ts <- unlist(ts)
-#     }
-#     output[, col_index] <- ts
-#     col_names[col_index] <- colnames(block)[j]
-#     col_index <- col_index + 1
-#     if (max_lag > 1) {
-#       for (i in 1:(max_lag - 1)) {
-#         ts <- c(rep_len(NA, tau), ts[1:(num_rows - tau)])
-#         if (!is.null(lib)) {
-#           for (k in seq_len(NROW(lib))) {
-#             ts[lib[k, 1] - 1 + (1:tau)] <- NA
-#           }
-#         }
-#         output[, col_index] <- ts
-#         col_names[col_index] <- paste0(colnames(block)[j], "_", i * tau)
-#         col_index <- col_index + 1
-#       }
-#     }
-#   }
-#   if (!is.null(lib) && restrict_to_lib) {
-#     row_idx <- sort(unique(do.call(c, mapply(seq, lib[, 1], lib[, 2], SIMPLIFY = FALSE))))
-#     output <- output[row_idx, ]
-#   }
-#   output <- data.frame(output)
-#   names(output) <- col_names
-#   return(output)
-# }
