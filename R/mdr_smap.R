@@ -246,7 +246,7 @@ compute_mvd <- function (block_mvd, effect_var,
                          distance_only = TRUE,
                          silent = FALSE) {
   # Message about the recent update
-  message("\033[31m", "Update in v0.2.2: The default `E` and `make_block_max_lag` is changed to 3. ", "\033[0m", "The embedding dimension to use for time delay embedding to calculate the multiview distance.")
+  message("\033[31m", "Update in v0.2.2: The default `E` and `make_block_max_lag` is changed to 3. ", "\033[0m", "`E` is the embedding dimension used for time delay embedding to calculate the multiview distance.")
 
   # Set random seed
   set.seed(random_seed)
