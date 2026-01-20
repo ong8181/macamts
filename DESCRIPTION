@@ -1,7 +1,7 @@
 Package: macamts
 Type: Package
 Title: A subset of the R package macam for time series analysis
-Version: 0.2.0
+Version: 0.2.2
 Author: Masayuki Ushio
 Maintainer: Masayuki Ushio <ong8181@gmail.com>
 Description: macamts contains a subset of the R functions implemented in macam.
@@ -10,7 +10,7 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Imports: 
     dplyr,
     foreach,
