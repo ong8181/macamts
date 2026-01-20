@@ -1,8 +1,8 @@
 ---
-title: "macam: A collection of miscellaneous functions for ecology in R"
+title: "macamts: A collection of miscellaneous functions for ecology in R"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{macam: A collection of miscellaneous functions for ecology in R}
+  %\VignetteIndexEntry{macamts: A collection of miscellaneous functions for ecology in R}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
